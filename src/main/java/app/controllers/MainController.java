@@ -3,16 +3,15 @@ package app.controllers;
 import app.model.Message;
 import app.model.User;
 import app.repository.MessageRepository;
-import app.repository.UserRepository;
-import org.apache.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.util.StringUtils;
 import org.springframework.validation.BindingResult;
-import org.springframework.validation.FieldError;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
@@ -20,31 +19,26 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.validation.Valid;
 import java.io.File;
 import java.io.IOException;
-import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collector;
-import java.util.stream.Collectors;
 
 @Controller
 public class MainController {
-    final static Logger logger = Logger.getLogger(MainController.class);
-
     @Autowired
-    MessageRepository messageRepository;
+    private MessageRepository messageRepo;
+
     @Value("${upload.path}")
     private String uploadPath;
 
     @GetMapping("/main")
     public String main(@RequestParam(required = false, defaultValue = "") String filter, Model model) {
-        Iterable<Message> messages = messageRepository.findAll();
+        Iterable<Message> messages;
 
         if (filter != null && !filter.isEmpty()) {
-            messages = messageRepository.findByTag(filter);
-            logger.info("filter " + filter);
+            messages = messageRepo.findByTag(filter);
         } else {
-            messages = messageRepository.findAll();
-            logger.info("findAll");
+            messages = messageRepo.findAll();
         }
 
         model.addAttribute("messages", messages);
@@ -54,53 +48,91 @@ public class MainController {
     }
 
     @PostMapping("/main")
-    public String addMessage(
+    public String add(
             @AuthenticationPrincipal User user,
             @Valid Message message,
             BindingResult bindingResult,
             Model model,
-            @RequestParam("file") MultipartFile file) throws IOException {
-        String filter = "";
+            @RequestParam("file") MultipartFile file
+    ) throws IOException {
         message.setAuthor(user);
 
         if (bindingResult.hasErrors()) {
-            Map<String, String> errorMap = ControllerUtils.getErrors(bindingResult);
+            Map<String, String> errorsMap = ControllerUtils.getErrors(bindingResult);
 
-            model.mergeAttributes(errorMap);
+            model.mergeAttributes(errorsMap);
             model.addAttribute("message", message);
         } else {
-            if (file != null && !file.getOriginalFilename().isEmpty()) {
-                File uploadDir = new File(uploadPath);
+            saveFile(message, file);
 
-                if (!uploadDir.exists()) {
-                    uploadDir.mkdir();
-                }
-
-                String uuidFile = UUID.randomUUID().toString();
-                String resultName = uuidFile + "." + file.getOriginalFilename();
-                file.transferTo(new File(uploadPath + "/" + resultName));
-                message.setFilename(resultName);
-            }
             model.addAttribute("message", null);
-            messageRepository.save(message);
+
+            messageRepo.save(message);
         }
-        Iterable<Message> messages = messageRepository.findAll();
+
+        Iterable<Message> messages = messageRepo.findAll();
+
         model.addAttribute("messages", messages);
-        model.addAttribute("filter", filter);
+
         return "main";
     }
 
-    @PostMapping("getAll")
-    public String getAllMessage(Map<String, Object> model) {
-        Iterable<Message> messages = messageRepository.findAll();
-        model.put("messages", messages);
-        return "redirect:/main";
+    private void saveFile(@Valid Message message, @RequestParam("file") MultipartFile file) throws IOException {
+        if (file != null && !file.getOriginalFilename().isEmpty()) {
+            File uploadDir = new File(uploadPath);
+
+            if (!uploadDir.exists()) {
+                uploadDir.mkdir();
+            }
+
+            String uuidFile = UUID.randomUUID().toString();
+            String resultFilename = uuidFile + "." + file.getOriginalFilename();
+
+            file.transferTo(new File(uploadPath + "/" + resultFilename));
+
+            message.setFilename(resultFilename);
+        }
     }
 
-    @PostMapping("dellAllMessages")
-    public String dellAllMessages(Map<String, Object> model) {
-        messageRepository.deleteAll();
-        return "redirect:/main";
+    @GetMapping("/user-messages/{user}")
+    public String userMessages(
+            @AuthenticationPrincipal User currentUser,
+            @PathVariable User user,
+            Model model,
+            @RequestParam(required = false) Message message
+    ) {
+        Set<Message> messages = user.getMessages();
+
+        model.addAttribute("messages", messages);
+        model.addAttribute("message", message);
+        model.addAttribute("isCurrentUser", currentUser.equals(user));
+
+        return "userMessages";
     }
 
+    @PostMapping("/user-messages/{user}")
+    public String updateMessage(
+            @AuthenticationPrincipal User currentUser,
+            @PathVariable Long user,
+            @RequestParam("id") Message message,
+            @RequestParam("text") String text,
+            @RequestParam("tag") String tag,
+            @RequestParam("file") MultipartFile file
+    ) throws IOException {
+        if (message.getAuthor().equals(currentUser)) {
+            if (!StringUtils.isEmpty(text)) {
+                message.setText(text);
+            }
+
+            if (!StringUtils.isEmpty(tag)) {
+                message.setTag(tag);
+            }
+
+            saveFile(message, file);
+
+            messageRepo.save(message);
+        }
+
+        return "redirect:/user-messages/" + user;
+    }
 }

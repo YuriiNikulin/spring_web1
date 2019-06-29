@@ -42,20 +42,18 @@ public class UserService implements UserDetailsService {
         if (userFromDb != null) {
             return false;
         }
-
         user.setActive(true);
         user.setRoles(Collections.singleton(Role.USER));
         user.setActivationCode(UUID.randomUUID().toString());
         user.setPassword(passwordEncoder.encode(user.getPassword()));
-
         userRepository.save(user);
-
         sendMessage(user);
 
         return true;
     }
 
     private void sendMessage(User user) {
+
         if (!StringUtils.isEmpty(user.getEmail())) {
             String message = String.format(
                     "Hello, %s! \n" +
@@ -63,7 +61,6 @@ public class UserService implements UserDetailsService {
                     user.getUsername(),
                     user.getActivationCode()
             );
-
             mailSender.send(user.getEmail(), "Activation code", message);
         }
     }
@@ -74,9 +71,7 @@ public class UserService implements UserDetailsService {
         if (user == null) {
             return false;
         }
-
         user.setActivationCode(null);
-
         userRepository.save(user);
 
         return true;
@@ -88,7 +83,6 @@ public class UserService implements UserDetailsService {
 
     public void saveUser(User user, String username, Map<String, String> form) {
         user.setUsername(username);
-
         Set<String> roles = Arrays.stream(Role.values())
                 .map(Role::name)
                 .collect(Collectors.toSet());
@@ -100,13 +94,11 @@ public class UserService implements UserDetailsService {
                 user.getRoles().add(Role.valueOf(key));
             }
         }
-
         userRepository.save(user);
     }
 
     public void updateProfile(User user, String password, String email) {
         String userEmail = user.getEmail();
-
         boolean isEmailChanged = (email != null && !email.equals(userEmail)) ||
                 (userEmail != null && !userEmail.equals(email));
 
@@ -121,11 +113,16 @@ public class UserService implements UserDetailsService {
         if (!StringUtils.isEmpty(password)) {
             user.setPassword(passwordEncoder.encode(password));
         }
-
         userRepository.save(user);
 
         if (isEmailChanged) {
             sendMessage(user);
         }
+    }
+
+    public void updateAdminPass(){
+        User user =userRepository.findByUsername("admin");
+        user.setPassword(passwordEncoder.encode(user.getPassword()));
+        userRepository.save(user);
     }
 }
