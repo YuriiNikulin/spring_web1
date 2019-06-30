@@ -58,7 +58,7 @@ public class RegistrationController {
         }
 
         model.addAttribute("message", "Check your Email");
-        return "redirect:/greeting";
+        return "redirect:/";
     }
 
     @GetMapping("/activate/{code}")
